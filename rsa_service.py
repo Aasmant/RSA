@@ -453,7 +453,7 @@ def upload_file():
         # Encrypt file
         encrypted_data = encrypt_file(file_data, public_key_pem)
         
-        # Store encrypted file
+        # Store encrypted file - use TEXT type since we're storing base64 string
         file_hash = hashlib.sha256(file_data).hexdigest()
         conn = get_db_connection()
         cursor = conn.cursor()
