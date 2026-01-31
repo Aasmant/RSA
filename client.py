@@ -1,329 +1,165 @@
 #!/usr/bin/env python3
-"""
-RSA Encryption Service - CLI Client
-Users can upload, encrypt, download, and decrypt files via REST API
-"""
-
-import requests
-import json
-import os
-import sys
-import base64
+import requests, json, os, sys, base64
 from pathlib import Path
 
-# API endpoint
 API_URL = "http://localhost:5000"
-
-# Store token and credentials locally
 TOKEN_FILE = "token.json"
 
 def load_token():
-    """Load stored authentication token"""
     if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('token'), data.get('user_id'), data.get('username')
+        with open(TOKEN_FILE) as f:
+            d = json.load(f)
+            return d.get('token'), d.get('user_id'), d.get('username')
     return None, None, None
 
-def save_token(token, user_id, username):
-    """Save authentication token locally"""
+def save_token(tok, uid, user):
     with open(TOKEN_FILE, 'w') as f:
-        json.dump({
-            'token': token,
-            'user_id': user_id,
-            'username': username
-        }, f)
-    print(f"✅ Logged in as: {username}")
+        json.dump({'token': tok, 'user_id': uid, 'username': user}, f)
+    print(f"✅ Logged in as: {user}")
 
-def register(username, password):
-    """Register new user"""
-    print(f"\n📝 Registering user: {username}")
-    
-    response = requests.post(f"{API_URL}/api/register", json={
-        'username': username,
-        'password': password
-    })
-    
-    if response.status_code == 201:
-        data = response.json()
-        print("✅ Registration successful!")
-        print(f"   User ID: {data['user_id']}")
-        print(f"   Username: {data['username']}")
-        
-        # Save private key to file
-        private_key = data['private_key']
-        key_filename = f"{username}_private_key.pem"
-        with open(key_filename, 'w') as f:
-            f.write(private_key)
-        print(f"   ⚠️  Private key saved to: {key_filename}")
-        print(f"   ⚠️  KEEP THIS FILE SAFE - You'll need it to decrypt files!")
-        
-        return data['user_id'], data['username'], data['public_key']
+def register(user, pwd):
+    print(f"\n📝 Registering: {user}")
+    res = requests.post(f"{API_URL}/api/register", json={'username': user, 'password': pwd})
+    if res.status_code == 201:
+        d = res.json()
+        print("✅ Registration ok!")
+        print(f"   User ID: {d['user_id']}")
+        pk_file = f"{user}_private.pem"
+        with open(pk_file, 'w') as f:
+            f.write(d['private_key'])
+        print(f"   Private key saved: {pk_file}")
+        return d['user_id'], d['public_key'], d['private_key']
+    print(f"❌ Error: {res.json()}")
+    return None, None, None
+
+def login(user, pwd):
+    print(f"\n🔓 Login: {user}")
+    res = requests.post(f"{API_URL}/api/login", json={'username': user, 'password': pwd})
+    if res.status_code == 200:
+        d = res.json()
+        print("✅ Login ok!")
+        return d['token']
+    print(f"❌ Error: {res.json()}")
+    return None
+
+def upload(tok):
+    print("\n📤 Upload file")
+    fpath = input("File path: ").strip()
+    if not os.path.exists(fpath):
+        print("❌ File not found")
+        return
+    with open(fpath, 'rb') as f:
+        files = {'file': f}
+        res = requests.post(f"{API_URL}/api/upload", files=files, headers={'Authorization': f'Bearer {tok}'})
+    if res.status_code == 201:
+        d = res.json()
+        print(f"✅ Upload ok! File ID: {d['file_id']}")
     else:
-        print(f"❌ Registration failed: {response.json()['error']}")
-        return None, None, None
+        print(f"❌ Error: {res.json()}")
 
-def login(username, password):
-    """Login user and get token"""
-    print(f"\n🔐 Logging in: {username}")
-    
-    response = requests.post(f"{API_URL}/api/login", json={
-        'username': username,
-        'password': password
-    })
-    
-    if response.status_code == 200:
-        data = response.json()
-        token = data['token']
-        save_token(token, username, username)  # We'll use username as user_id for display
-        return token
+def list_files(tok):
+    print("\n📋 Your files")
+    res = requests.get(f"{API_URL}/api/files", headers={'Authorization': f'Bearer {tok}'})
+    if res.status_code == 200:
+        files = res.json()['files']
+        if files:
+            for f in files:
+                print(f"  ID: {f['id']}, Name: {f['filename']}")
+        else:
+            print("  (empty)")
     else:
-        print(f"❌ Login failed: {response.json()['error']}")
-        return None
+        print(f"❌ Error: {res.json()}")
 
-def get_headers(token):
-    """Get authorization headers"""
-    return {'Authorization': f'Bearer {token}'}
-
-def upload_file(file_path, token):
-    """Upload and encrypt file"""
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return None
-    
-    filename = os.path.basename(file_path)
-    print(f"\n📤 Uploading file: {filename}")
-    
-    with open(file_path, 'rb') as f:
-        files = {'file': (filename, f)}
-        response = requests.post(
-            f"{API_URL}/api/upload",
-            headers=get_headers(token),
-            files=files
-        )
-    
-    if response.status_code == 201:
-        data = response.json()
-        print(f"✅ File uploaded and encrypted!")
-        print(f"   File ID: {data['file_id']}")
-        print(f"   Filename: {data['filename']}")
-        return data['file_id']
+def download_enc(tok):
+    print("\n📥 Download encrypted file")
+    fid = input("File ID: ").strip()
+    outdir = input("Output dir (default: ./): ").strip() or "./"
+    os.makedirs(outdir, exist_ok=True)
+    res = requests.get(f"{API_URL}/api/download/{fid}", headers={'Authorization': f'Bearer {tok}'})
+    if res.status_code == 200:
+        d = res.json()
+        fname = f"{d['filename']}.encrypted"
+        fpath = os.path.join(outdir, fname)
+        with open(fpath, 'w') as f:
+            f.write(d['encrypted_data'])
+        print(f"✅ Saved: {fpath}")
     else:
-        print(f"❌ Upload failed: {response.json()['error']}")
-        return None
+        print(f"❌ Error: {res.json()}")
 
-def list_files(token):
-    """List user's encrypted files"""
-    print(f"\n📋 Fetching your files...")
+def decrypt_file(tok):
+    print("\n🔓 Decrypt file")
+    fid = input("File ID: ").strip()
+    outdir = input("Output dir (default: ./): ").strip() or "./"
+    os.makedirs(outdir, exist_ok=True)
     
-    response = requests.get(
-        f"{API_URL}/api/files",
-        headers=get_headers(token)
-    )
+    pk = input("Paste private key (or path to .pem file): ").strip()
+    if os.path.exists(pk):
+        with open(pk) as f:
+            pk = f.read()
     
-    if response.status_code == 200:
-        data = response.json()
-        files = data['files']
-        
-        if not files:
-            print("   No files found")
-            return []
-        
-        print("   Your encrypted files:")
-        for f in files:
-            print(f"   [{f['id']}] {f['filename']} (created: {f['created_at']})")
-        
-        return files
+    res = requests.post(f"{API_URL}/api/decrypt/{fid}", json={'private_key': pk}, headers={'Authorization': f'Bearer {tok}'})
+    if res.status_code == 200:
+        d = res.json()
+        dec_data = base64.b64decode(d['data'])
+        fname = d['filename']
+        fpath = os.path.join(outdir, fname)
+        with open(fpath, 'wb') as f:
+            f.write(dec_data)
+        print(f"✅ Decrypted: {fpath} ({len(dec_data)} bytes)")
     else:
-        print(f"❌ Failed to list files: {response.json()['error']}")
-        return []
-
-def download_encrypted_file(file_id, output_dir, token):
-    """Download encrypted file to disk"""
-    print(f"\n📥 Downloading encrypted file (ID: {file_id})...")
-    
-    response = requests.get(
-        f"{API_URL}/api/download/{file_id}",
-        headers=get_headers(token)
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        filename = data['filename']
-        encrypted_data = data['encrypted_data']
-        
-        # Create output directory if it doesn't exist
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # Save encrypted file with .encrypted extension
-        output_path = os.path.join(output_dir, f"{filename}.encrypted")
-        
-        with open(output_path, 'w') as f:
-            f.write(encrypted_data)
-        
-        print(f"✅ Encrypted file downloaded!")
-        print(f"   Original filename: {filename}")
-        print(f"   Saved to: {output_path}")
-        print(f"   Size: {len(encrypted_data)} bytes (base64 encoded)")
-        return True
-    else:
-        print(f"❌ Download failed: {response.json()['error']}")
-        return False
-
-def decrypt_file(file_id, private_key_path, output_path, token):
-    """Decrypt file"""
-    if not os.path.exists(private_key_path):
-        print(f"❌ Private key file not found: {private_key_path}")
-        return False
-    
-    print(f"\n🔓 Decrypting file (ID: {file_id})...")
-    
-    with open(private_key_path, 'r') as f:
-        private_key = f.read()
-    
-    response = requests.post(
-        f"{API_URL}/api/decrypt/{file_id}",
-        headers=get_headers(token),
-        json={'private_key': private_key}
-    )
-    
-    if response.status_code == 200:
-        data = response.json()
-        filename = data['filename']
-        encrypted_data = data['data']
-        
-        try:
-            # Decode base64 to binary
-            decrypted_binary = base64.b64decode(encrypted_data)
-            
-            # Save to file
-            if not output_path:
-                output_path = f"decrypted_{filename}"
-            
-            # Create full path
-            full_path = os.path.abspath(output_path)
-            
-            # Write binary data
-            with open(full_path, 'wb') as f:
-                bytes_written = f.write(decrypted_binary)
-            
-            # Verify file was written correctly
-            actual_size = os.path.getsize(full_path)
-            
-            print(f"✅ File decrypted successfully!")
-            print(f"   Original filename: {filename}")
-            print(f"   Decrypted size: {len(decrypted_binary)} bytes")
-            print(f"   Saved to: {full_path}")
-            print(f"   File size on disk: {actual_size} bytes")
-            
-            if actual_size != len(decrypted_binary):
-                print(f"⚠️  WARNING: Size mismatch! Expected {len(decrypted_binary)}, got {actual_size}")
-            
-            # Show file type
-            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
-                print(f"   ℹ️  File type: Image - use 'open {full_path}' to view")
-            elif filename.lower().endswith(('.pdf')):
-                print(f"   ℹ️  File type: PDF - use 'open {full_path}' to view")
-            else:
-                print(f"   ℹ️  File type: {os.path.splitext(filename)[1] or 'Unknown'}")
-            
-            return True
-        except Exception as e:
-            print(f"❌ Error saving decrypted file: {str(e)}")
-            return False
-    else:
-        error_msg = response.json().get('error', 'Unknown error')
-        print(f"❌ Decryption failed: {error_msg}")
-        return False
+        print(f"❌ Error: {res.json()}")
 
 def main():
-    """Main CLI interface"""
-    print("\n" + "="*60)
-    print("🔐 RSA Encryption Service - CLI Client")
-    print("="*60)
-    
-    token, _, username = load_token()
+    tok, uid, user = load_token()
     
     while True:
-        print("\n" + "-"*60)
-        if token:
-            print(f"Logged in as: {username}")
-            print("\nOptions:")
-            print("  1. Upload file (will be encrypted)")
-            print("  2. List my encrypted files")
-            print("  3. Download encrypted file")
-            print("  4. Decrypt file")
-            print("  5. Logout")
-            print("  6. Exit")
-        else:
-            print("Not logged in")
-            print("\nOptions:")
-            print("  1. Register")
-            print("  2. Login")
-            print("  3. Exit")
+        print("\n=== RSA Encryption Service ===")
+        if tok:
+            print(f"User: {user} (ID: {uid})")
+        print("1. Register")
+        print("2. Login")
+        if tok:
+            print("3. Upload")
+            print("4. List files")
+            print("5. Download encrypted")
+            print("6. Decrypt")
+            print("7. Logout")
+        print("8. Exit")
         
-        choice = input("\nSelect option (1-6): ").strip()
+        ch = input("\nChoice: ").strip()
         
-        if not token:
-            # Not logged in
-            if choice == '1':
-                username = input("Enter username: ").strip()
-                password = input("Enter password: ").strip()
-                user_id, username, _ = register(username, password)
-                if user_id:
-                    token = login(username, password)
-            elif choice == '2':
-                username = input("Enter username: ").strip()
-                password = input("Enter password: ").strip()
-                token = login(username, password)
-            elif choice == '3':
-                print("Goodbye!")
-                break
-        else:
-            # Logged in
-            if choice == '1':
-                file_path = input("Enter file path to upload: ").strip()
-                upload_file(file_path, token)
-            elif choice == '2':
-                list_files(token)
-            elif choice == '3':
-                files = list_files(token)
-                if files:
-                    file_id = input("Enter file ID to download: ").strip()
-                    output_dir = input("Enter output folder (press Enter for current directory): ").strip()
-                    if not output_dir:
-                        output_dir = "."
-                    try:
-                        file_id = int(file_id)
-                        download_encrypted_file(file_id, output_dir, token)
-                    except ValueError:
-                        print("❌ Invalid file ID")
-            elif choice == '4':
-                files = list_files(token)
-                if files:
-                    file_id = input("Enter file ID to decrypt: ").strip()
-                    private_key_path = input("Enter path to your private key file: ").strip()
-                    output_path = input("Enter output filename (press Enter for default): ").strip()
-                    try:
-                        file_id = int(file_id)
-                        decrypt_file(file_id, private_key_path, output_path or None, token)
-                    except ValueError:
-                        print("❌ Invalid file ID")
-            elif choice == '5':
-                os.remove(TOKEN_FILE)
-                token = None
-                print("✅ Logged out")
-            elif choice == '6':
-                print("Goodbye!")
-                break
-            else:
-                print("❌ Invalid option")
+        if ch == "1":
+            user_in = input("Username: ").strip()
+            pwd_in = input("Password: ").strip()
+            register(user_in, pwd_in)
+        
+        elif ch == "2":
+            user_in = input("Username: ").strip()
+            pwd_in = input("Password: ").strip()
+            t = login(user_in, pwd_in)
+            if t:
+                tok = t
+                uid = input("User ID: ").strip()
+                save_token(tok, uid, user_in)
+                user = user_in
+        
+        elif ch == "3" and tok:
+            upload(tok)
+        elif ch == "4" and tok:
+            list_files(tok)
+        elif ch == "5" and tok:
+            download_enc(tok)
+        elif ch == "6" and tok:
+            decrypt_file(tok)
+        
+        elif ch == "7" and tok:
+            os.remove(TOKEN_FILE) if os.path.exists(TOKEN_FILE) else None
+            tok, uid, user = None, None, None
+            print("✅ Logged out")
+        
+        elif ch == "8":
+            print("Bye!")
+            sys.exit(0)
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nGoodbye!")
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
+    main()
