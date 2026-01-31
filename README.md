@@ -20,33 +20,54 @@ This project provides a complete case study in security engineering for a RESTfu
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Initialize database
-python rsa_service.py
+# Start the server
+python3 rsa_service.py
 
 # Service runs on http://127.0.0.1:5000
 ```
 
-### Example Usage
+### Using the CLI Client (Recommended)
 
 ```bash
-# Register new user
-curl -X POST http://127.0.0.1:5000/api/register \
+# Interactive CLI client for all operations
+python3 client.py
+
+# Follow the menu to:
+# - Register or login
+# - Upload files (automatically encrypted with your public key)
+# - List your encrypted files
+# - Decrypt files (if authorized with your private key)
+```
+
+### Using the REST API Directly
+
+For detailed API documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
+
+**Quick Example:**
+
+```bash
+# Register user
+curl -X POST http://localhost:5000/api/register \
   -H "Content-Type: application/json" \
   -d '{"username":"alice","password":"SecurePassword123"}'
 
 # Login and get token
-curl -X POST http://127.0.0.1:5000/api/login \
+TOKEN=$(curl -s -X POST http://localhost:5000/api/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"SecurePassword123"}'
+  -d '{"username":"alice","password":"SecurePassword123"}' | jq -r '.token')
 
-# Upload file (requires JWT token)
-curl -X POST http://127.0.0.1:5000/api/upload \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@document.txt"
+# Upload and encrypt file
+curl -X POST http://localhost:5000/api/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@myfile.txt"
+
+# List files
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:5000/api/files
 
 # Decrypt file
-curl -X POST http://127.0.0.1:5000/api/decrypt/1 \
-  -H "Authorization: Bearer <token>" \
+curl -X POST http://localhost:5000/api/decrypt/1 \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"private_key":"-----BEGIN RSA PRIVATE KEY-----..."}'
 ```
