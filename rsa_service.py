@@ -794,6 +794,22 @@ def decrypt_file_endpoint(file_id):
         return jsonify({'error': 'Private key required'}), 400
     
     try:
+        # Fix private key formatting if newlines are missing
+        if '\\n' in private_key_pem:
+            private_key_pem = private_key_pem.replace('\\n', '\n')
+        
+        # If key is all on one line, add newlines every 64 characters
+        if '\n' not in private_key_pem:
+            # Extract the base64 content between BEGIN and END
+            if '-----BEGIN PRIVATE KEY-----' in private_key_pem and '-----END PRIVATE KEY-----' in private_key_pem:
+                start = private_key_pem.find('-----BEGIN PRIVATE KEY-----') + len('-----BEGIN PRIVATE KEY-----')
+                end = private_key_pem.find('-----END PRIVATE KEY-----')
+                base64_content = private_key_pem[start:end].strip()
+                
+                # Add newlines every 64 characters
+                formatted_lines = [base64_content[i:i+64] for i in range(0, len(base64_content), 64)]
+                private_key_pem = '-----BEGIN PRIVATE KEY-----\n' + '\n'.join(formatted_lines) + '\n-----END PRIVATE KEY-----'
+        
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
         
@@ -820,7 +836,7 @@ def decrypt_file_endpoint(file_id):
         
     except Exception as e:
         logger.error(f"Decryption error: {str(e)}")
-        return jsonify({'error': 'Decryption failed'}), 500
+        return jsonify({'error': 'Decryption failed: ' + str(e)}), 500
 
 @app.route('/api/files', methods=['GET'])
 @token_required
