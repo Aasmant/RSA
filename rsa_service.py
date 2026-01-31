@@ -487,11 +487,6 @@ def list_files():
 # INITIALIZATION AND MAIN
 # ============================================================================
 
-@app.before_first_request
-def before_first_request():
-    """Initialize database before first request"""
-    init_db()
-
 if __name__ == '__main__':
     init_db()
     # VULNERABILITY 12: Debug mode enabled
