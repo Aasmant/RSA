@@ -604,10 +604,31 @@ def dashboard():
                 if (response.ok) {
                     const decoded = atob(result.data);
                     document.getElementById('decryptStatus').innerHTML = '<span class="success">✅ Decrypted successfully!</span>';
-                    document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px;">' + decoded + '</pre>';
+                    
+                    // Check if it's an image
+                    const isImage = isImageData(decoded);
+                    
+                    if (isImage) {
+                        // Display as image
+                        const imageData = 'data:image/jpeg;base64,' + result.data;
+                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Image:</strong><br><img src="' + imageData + '" style="max-width: 100%; border-radius: 5px; margin-top: 10px;">';
+                    } else {
+                        // Display as text
+                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">' + decoded + '</pre>';
+                    }
                 } else {
                     document.getElementById('decryptStatus').innerHTML = '<span class="error">❌ Decryption failed: ' + result.error + '</span>';
                 }
+            }
+            
+            function isImageData(data) {
+                // Check for JPEG signature
+                if (data.charCodeAt(0) === 0xFF && data.charCodeAt(1) === 0xD8) return true;
+                // Check for PNG signature
+                if (data.charCodeAt(0) === 0x89 && data.charCodeAt(1) === 0x50) return true;
+                // Check for GIF signature
+                if (data.substring(0, 3) === 'GIF') return true;
+                return false;
             }
             
             function logout() {
