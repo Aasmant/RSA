@@ -45,9 +45,16 @@ logger = logging.getLogger(__name__)
 # DATABASE INITIALIZATION
 # ============================================================================
 
+def get_db_connection():
+    """Get database connection with proper settings for macOS"""
+    conn = sqlite3.connect(DATABASE, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
 def init_db():
     """Initialize SQLite database with required tables"""
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Create users table
@@ -181,7 +188,7 @@ def decrypt_file(encrypted_data_b64, private_key_pem):
 
 def verify_password(username, password):
     """Verify username and password"""
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
@@ -250,7 +257,7 @@ def log_audit(user_id, action, details=""):
     VULNERABILITY 6: Sensitive data may be logged (passwords, keys)
     SOLUTION: Comprehensive logging with data sanitization
     """
-    conn = sqlite3.connect(DATABASE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
         'INSERT INTO audit_log (user_id, action, details) VALUES (?, ?, ?)',
@@ -300,7 +307,7 @@ def register():
         password_hash = generate_password_hash(password, method='pbkdf2:sha256')
         
         # Store user
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO users (username, password_hash, public_key) VALUES (?, ?, ?)',
@@ -379,7 +386,7 @@ def upload_file():
         # Should validate: if len(file_data) > 100_000_000: return error
         
         # Get user's public key
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT public_key FROM users WHERE id = ?', (request.user_id,))
         result = cursor.fetchone()
@@ -395,7 +402,7 @@ def upload_file():
         
         # Store encrypted file
         file_hash = hashlib.sha256(file_data).hexdigest()
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO files (user_id, filename, encrypted_data, file_hash) VALUES (?, ?, ?, ?)',
@@ -450,7 +457,7 @@ def decrypt_file_endpoint(file_id):
                 formatted_lines = [base64_content[i:i+64] for i in range(0, len(base64_content), 64)]
                 private_key_pem = '-----BEGIN PRIVATE KEY-----\n' + '\n'.join(formatted_lines) + '\n-----END PRIVATE KEY-----'
         
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # VULNERABILITY 11: Missing authorization
@@ -485,7 +492,7 @@ def decrypt_file_endpoint(file_id):
 def list_files():
     """List user's encrypted files"""
     try:
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             'SELECT id, filename, created_at FROM files WHERE user_id = ?',
@@ -506,7 +513,7 @@ def list_files():
 def download_file(file_id):
     """Download encrypted file"""
     try:
-        conn = sqlite3.connect(DATABASE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             'SELECT encrypted_data, filename FROM files WHERE id = ? AND user_id = ?',
