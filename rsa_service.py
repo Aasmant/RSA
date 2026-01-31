@@ -602,33 +602,44 @@ def dashboard():
                 
                 const result = await response.json();
                 if (response.ok) {
-                    const decoded = atob(result.data);
                     document.getElementById('decryptStatus').innerHTML = '<span class="success">✅ Decrypted successfully!</span>';
                     
-                    // Check if it's an image
-                    const isImage = isImageData(decoded);
+                    // Get MIME type from filename
+                    const filename = document.querySelector('.file-item:last-child').textContent;
+                    const mimeType = getMimeType(filename);
                     
-                    if (isImage) {
+                    if (mimeType && mimeType.startsWith('image/')) {
                         // Display as image
-                        const imageData = 'data:image/jpeg;base64,' + result.data;
-                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Image:</strong><br><img src="' + imageData + '" style="max-width: 100%; border-radius: 5px; margin-top: 10px;">';
+                        const imageData = 'data:' + mimeType + ';base64,' + result.data;
+                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Image:</strong><br><img src="' + imageData + '" style="max-width: 100%; max-height: 500px; border-radius: 5px; margin-top: 10px;" onerror="document.getElementById(\'decryptedData\').innerHTML += \'<br><span style=color:red>Image failed to load. Try text file instead.</span>\';">';
                     } else {
                         // Display as text
-                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">' + decoded + '</pre>';
+                        try {
+                            const decoded = atob(result.data);
+                            document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">' + decoded + '</pre>';
+                        } catch(e) {
+                            // Binary file, show as base64
+                            document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content (Binary):</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto; word-break: break-all;">' + result.data.substring(0, 200) + '...</pre>';
+                        }
                     }
                 } else {
                     document.getElementById('decryptStatus').innerHTML = '<span class="error">❌ Decryption failed: ' + result.error + '</span>';
                 }
             }
             
-            function isImageData(data) {
-                // Check for JPEG signature
-                if (data.charCodeAt(0) === 0xFF && data.charCodeAt(1) === 0xD8) return true;
-                // Check for PNG signature
-                if (data.charCodeAt(0) === 0x89 && data.charCodeAt(1) === 0x50) return true;
-                // Check for GIF signature
-                if (data.substring(0, 3) === 'GIF') return true;
-                return false;
+            function getMimeType(filename) {
+                const ext = filename.toLowerCase().split('.').pop();
+                const mimeTypes = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'bmp': 'image/bmp',
+                    'webp': 'image/webp',
+                    'txt': 'text/plain',
+                    'pdf': 'application/pdf'
+                };
+                return mimeTypes[ext] || null;
             }
             
             function logout() {
