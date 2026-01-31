@@ -501,6 +501,38 @@ def list_files():
         logger.error(f"List files error: {str(e)}")
         return jsonify({'error': 'Failed to list files'}), 500
 
+@app.route('/api/download/<int:file_id>', methods=['GET'])
+@token_required
+def download_file(file_id):
+    """Download encrypted file"""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT encrypted_data, filename FROM files WHERE id = ? AND user_id = ?',
+            (file_id, request.user_id)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return jsonify({'error': 'File not found or unauthorized'}), 404
+        
+        encrypted_data = result[0]
+        filename = result[1]
+        
+        log_audit(request.user_id, 'FILE_DOWNLOADED', f'File ID: {file_id}, Filename: {filename}')
+        
+        return jsonify({
+            'file_id': file_id,
+            'filename': filename,
+            'encrypted_data': encrypted_data
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Download error: {str(e)}")
+        return jsonify({'error': 'Download failed'}), 500
+
 # ============================================================================
 # INITIALIZATION AND MAIN
 # ============================================================================

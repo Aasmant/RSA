@@ -138,31 +138,37 @@ def list_files(token):
         print(f"❌ Failed to list files: {response.json()['error']}")
         return []
 
-def download_encrypted_file(file_id, output_path, token):
-    """Download encrypted file"""
+def download_encrypted_file(file_id, output_dir, token):
+    """Download encrypted file to disk"""
     print(f"\n📥 Downloading encrypted file (ID: {file_id})...")
     
-    # First, get file info from list
     response = requests.get(
-        f"{API_URL}/api/files",
+        f"{API_URL}/api/download/{file_id}",
         headers=get_headers(token)
     )
     
     if response.status_code == 200:
-        files = response.json()['files']
-        file_info = next((f for f in files if f['id'] == file_id), None)
+        data = response.json()
+        filename = data['filename']
+        encrypted_data = data['encrypted_data']
         
-        if not file_info:
-            print(f"❌ File not found")
-            return False
+        # Create output directory if it doesn't exist
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
         
-        # For downloading, we would need a dedicated endpoint
-        # For now, we'll show the encrypted data
-        print(f"✅ File: {file_info['filename']}")
-        print(f"   To decrypt, use the decrypt command with this file ID")
+        # Save encrypted file with .encrypted extension
+        output_path = os.path.join(output_dir, f"{filename}.encrypted")
+        
+        with open(output_path, 'w') as f:
+            f.write(encrypted_data)
+        
+        print(f"✅ Encrypted file downloaded!")
+        print(f"   Original filename: {filename}")
+        print(f"   Saved to: {output_path}")
+        print(f"   Size: {len(encrypted_data)} bytes (base64 encoded)")
         return True
     else:
-        print(f"❌ Failed: {response.json()['error']}")
+        print(f"❌ Download failed: {response.json()['error']}")
         return False
 
 def decrypt_file(file_id, private_key_path, output_path, token):
@@ -259,9 +265,12 @@ def main():
                 files = list_files(token)
                 if files:
                     file_id = input("Enter file ID to download: ").strip()
+                    output_dir = input("Enter output folder (press Enter for current directory): ").strip()
+                    if not output_dir:
+                        output_dir = "."
                     try:
                         file_id = int(file_id)
-                        download_encrypted_file(file_id, None, token)
+                        download_encrypted_file(file_id, output_dir, token)
                     except ValueError:
                         print("❌ Invalid file ID")
             elif choice == '4':
