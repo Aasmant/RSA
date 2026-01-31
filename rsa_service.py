@@ -604,27 +604,51 @@ def dashboard():
                 if (response.ok) {
                     document.getElementById('decryptStatus').innerHTML = '<span class="success">✅ Decrypted successfully!</span>';
                     
-                    // Get MIME type from filename
-                    const filename = document.querySelector('.file-item:last-child').textContent;
+                    const filename = result.filename;
+                    const base64Data = result.data;
                     const mimeType = getMimeType(filename);
                     
+                    // Display preview if it's an image or text
+                    let preview = '';
                     if (mimeType && mimeType.startsWith('image/')) {
-                        // Display as image
-                        const imageData = 'data:' + mimeType + ';base64,' + result.data;
-                        document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Image:</strong><br><img src="' + imageData + '" style="max-width: 100%; max-height: 500px; border-radius: 5px; margin-top: 10px;" onerror="document.getElementById(\'decryptedData\').innerHTML += \'<br><span style=color:red>Image failed to load. Try text file instead.</span>\';">';
-                    } else {
-                        // Display as text
+                        const imageData = 'data:' + mimeType + ';base64,' + base64Data;
+                        preview = '<strong>Decrypted Image:</strong><br><img src="' + imageData + '" style="max-width: 100%; max-height: 500px; border-radius: 5px; margin-top: 10px;">';
+                    } else if (mimeType && mimeType.startsWith('text/')) {
                         try {
-                            const decoded = atob(result.data);
-                            document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">' + decoded + '</pre>';
+                            const decoded = atob(base64Data);
+                            preview = '<strong>Decrypted Text:</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">' + decoded + '</pre>';
                         } catch(e) {
-                            // Binary file, show as base64
-                            document.getElementById('decryptedData').innerHTML = '<strong>Decrypted Content (Binary):</strong><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto; word-break: break-all;">' + result.data.substring(0, 200) + '...</pre>';
+                            preview = '';
                         }
                     }
+                    
+                    // Download button
+                    const downloadBtn = '<button onclick="downloadDecryptedFile(\'' + base64Data + '\', \'' + filename + '\', \'' + mimeType + '\')" style="background: #28a745; margin-top: 10px;">📥 Download ' + filename + '</button>';
+                    
+                    document.getElementById('decryptedData').innerHTML = preview + '<br>' + downloadBtn;
                 } else {
                     document.getElementById('decryptStatus').innerHTML = '<span class="error">❌ Decryption failed: ' + result.error + '</span>';
                 }
+            }
+            
+            function downloadDecryptedFile(base64Data, filename, mimeType) {
+                // Create blob from base64
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], {type: mimeType || 'application/octet-stream'});
+                
+                // Create download link
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
             }
             
             function getMimeType(filename) {
@@ -847,7 +871,7 @@ def decrypt_file_endpoint(file_id):
         
         # VULNERABILITY 11: Missing authorization
         # Should verify: cursor.execute('SELECT * FROM files WHERE id = ? AND user_id = ?', (file_id, request.user_id))
-        cursor.execute('SELECT encrypted_data FROM files WHERE id = ?', (file_id,))
+        cursor.execute('SELECT encrypted_data, filename FROM files WHERE id = ?', (file_id,))
         result = cursor.fetchone()
         conn.close()
         
@@ -855,6 +879,7 @@ def decrypt_file_endpoint(file_id):
             return jsonify({'error': 'File not found'}), 404
         
         encrypted_data = result[0]
+        filename = result[1]
         
         # Decrypt
         decrypted_data = decrypt_file(encrypted_data, private_key_pem)
@@ -863,6 +888,7 @@ def decrypt_file_endpoint(file_id):
         
         return jsonify({
             'file_id': file_id,
+            'filename': filename,
             'data': base64.b64encode(decrypted_data).decode('utf-8')
         }), 200
         
