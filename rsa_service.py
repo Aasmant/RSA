@@ -6,6 +6,7 @@ Demonstrates secure implementation patterns with intentional vulnerabilities for
 from flask import Flask, request, jsonify
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import jwt
 import sqlite3
@@ -16,6 +17,7 @@ import base64
 import os
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
 
 # ============================================================================
 # SECURITY VULNERABILITIES INTENTIONALLY INCLUDED FOR EDUCATIONAL PURPOSES
@@ -133,12 +135,10 @@ def serialize_private_key(private_key):
 
 def encrypt_file(file_data, public_key_pem):
     """
-    Encrypt file using RSA
+    Encrypt file using Hybrid Encryption (RSA + AES)
     
-    VULNERABILITY 3: Uses PKCS#1 v1.5 padding (susceptible to padding oracle attacks)
-    VULNERABILITY 4: Direct RSA encryption not suitable for large files
-    IMPACT: Files larger than key size cannot be encrypted; vulnerable to padding oracle
-    SOLUTION: Use OAEP padding and hybrid encryption (RSA for key, AES for data)
+    SECURE IMPLEMENTATION: Uses AES-256 for file encryption and RSA-2048 to encrypt the AES key
+    This allows files of any size to be encrypted.
     """
     try:
         public_key = serialization.load_pem_public_key(
@@ -146,22 +146,49 @@ def encrypt_file(file_data, public_key_pem):
             backend=default_backend()
         )
         
-        # VULNERABILITY: Using PKCS#1 v1.5 instead of OAEP
-        ciphertext = public_key.encrypt(
-            file_data[:190],  # Truncate due to RSA size limitations
-            padding.PKCS1v15()  # VULNERABLE PADDING
+        # Generate random AES key (32 bytes = 256 bits)
+        aes_key = secrets.token_bytes(32)
+        
+        # Generate random IV (16 bytes)
+        iv = secrets.token_bytes(16)
+        
+        # Encrypt file data with AES-256-CBC
+        cipher = Cipher(
+            algorithms.AES(aes_key),
+            modes.CBC(iv),
+            backend=default_backend()
+        )
+        encryptor = cipher.encryptor()
+        
+        # Add PKCS7 padding to file data
+        padding_length = 16 - (len(file_data) % 16)
+        padded_data = file_data + bytes([padding_length] * padding_length)
+        
+        # Encrypt the padded data
+        encrypted_file = encryptor.update(padded_data) + encryptor.finalize()
+        
+        # Encrypt the AES key with RSA
+        encrypted_aes_key = public_key.encrypt(
+            aes_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
         )
         
-        return base64.b64encode(ciphertext).decode('utf-8')
+        # Combine: encrypted_aes_key + iv + encrypted_file (all base64 encoded)
+        combined = encrypted_aes_key + iv + encrypted_file
+        return base64.b64encode(combined).decode('utf-8')
+        
     except Exception as e:
         logger.error(f"Encryption error: {str(e)}")
         raise
 
 def decrypt_file(encrypted_data_b64, private_key_pem):
     """
-    Decrypt file using RSA
-    
-    VULNERABILITY: Mirrors encryption flaws
+    Decrypt file using Hybrid Encryption (RSA + AES)
+    Mirrors the encryption process
     """
     try:
         private_key = serialization.load_pem_private_key(
@@ -170,14 +197,40 @@ def decrypt_file(encrypted_data_b64, private_key_pem):
             backend=default_backend()
         )
         
-        encrypted_data = base64.b64decode(encrypted_data_b64)
+        # Decode from base64
+        combined = base64.b64decode(encrypted_data_b64)
         
-        plaintext = private_key.decrypt(
-            encrypted_data,
-            padding.PKCS1v15()
+        # Extract components
+        # RSA key is 256 bytes (2048-bit), IV is 16 bytes
+        encrypted_aes_key = combined[:256]
+        iv = combined[256:272]
+        encrypted_file = combined[272:]
+        
+        # Decrypt AES key with RSA
+        aes_key = private_key.decrypt(
+            encrypted_aes_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
         )
         
+        # Decrypt file with AES
+        cipher = Cipher(
+            algorithms.AES(aes_key),
+            modes.CBC(iv),
+            backend=default_backend()
+        )
+        decryptor = cipher.decryptor()
+        padded_plaintext = decryptor.update(encrypted_file) + decryptor.finalize()
+        
+        # Remove PKCS7 padding
+        padding_length = padded_plaintext[-1]
+        plaintext = padded_plaintext[:-padding_length]
+        
         return plaintext
+        
     except Exception as e:
         logger.error(f"Decryption error: {str(e)}")
         raise
