@@ -193,22 +193,48 @@ def decrypt_file(file_id, private_key_path, output_path, token):
         filename = data['filename']
         encrypted_data = data['data']
         
-        # Decode base64 to binary
-        decrypted_binary = base64.b64decode(encrypted_data)
-        
-        # Save to file
-        if not output_path:
-            output_path = f"decrypted_{filename}"
-        
-        with open(output_path, 'wb') as f:
-            f.write(decrypted_binary)
-        
-        print(f"✅ File decrypted successfully!")
-        print(f"   Original filename: {filename}")
-        print(f"   Saved to: {output_path}")
-        return True
+        try:
+            # Decode base64 to binary
+            decrypted_binary = base64.b64decode(encrypted_data)
+            
+            # Save to file
+            if not output_path:
+                output_path = f"decrypted_{filename}"
+            
+            # Create full path
+            full_path = os.path.abspath(output_path)
+            
+            # Write binary data
+            with open(full_path, 'wb') as f:
+                bytes_written = f.write(decrypted_binary)
+            
+            # Verify file was written correctly
+            actual_size = os.path.getsize(full_path)
+            
+            print(f"✅ File decrypted successfully!")
+            print(f"   Original filename: {filename}")
+            print(f"   Decrypted size: {len(decrypted_binary)} bytes")
+            print(f"   Saved to: {full_path}")
+            print(f"   File size on disk: {actual_size} bytes")
+            
+            if actual_size != len(decrypted_binary):
+                print(f"⚠️  WARNING: Size mismatch! Expected {len(decrypted_binary)}, got {actual_size}")
+            
+            # Show file type
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                print(f"   ℹ️  File type: Image - use 'open {full_path}' to view")
+            elif filename.lower().endswith(('.pdf')):
+                print(f"   ℹ️  File type: PDF - use 'open {full_path}' to view")
+            else:
+                print(f"   ℹ️  File type: {os.path.splitext(filename)[1] or 'Unknown'}")
+            
+            return True
+        except Exception as e:
+            print(f"❌ Error saving decrypted file: {str(e)}")
+            return False
     else:
-        print(f"❌ Decryption failed: {response.json()['error']}")
+        error_msg = response.json().get('error', 'Unknown error')
+        print(f"❌ Decryption failed: {error_msg}")
         return False
 
 def main():
