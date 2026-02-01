@@ -137,6 +137,9 @@ def upload():
     f = request.files['file']
     data = f.read()
     
+    if len(data) > 190:
+        return jsonify({'error': 'File too large - max 190 bytes'}), 400
+    
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT public_key FROM users WHERE id = ?', (request.user_id,))

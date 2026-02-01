@@ -48,14 +48,17 @@ def upload(tok):
     if not os.path.exists(fpath):
         print("❌ File not found")
         return
-    with open(fpath, 'rb') as f:
-        files = {'file': f}
-        res = requests.post(f"{API_URL}/api/upload", files=files, headers={'Authorization': f'Bearer {tok}'})
-    if res.status_code == 201:
-        d = res.json()
-        print(f"✅ Upload ok! File ID: {d['file_id']}")
-    else:
-        print(f"❌ Error: {res.json()}")
+    try:
+        with open(fpath, 'rb') as f:
+            files = {'file': (os.path.basename(fpath), f)}
+            res = requests.post(f"{API_URL}/api/upload", files=files, headers={'Authorization': f'Bearer {tok}'})
+        if res.status_code == 201:
+            d = res.json()
+            print(f"✅ Upload ok! File ID: {d['file_id']}")
+        else:
+            print(f"❌ Error: {res.json()}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
 def list_files(tok):
     print("\n📋 Your files")
