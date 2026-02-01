@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 SECRET_KEY = "secret"
 DATABASE = "rsa_service.db"
+MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 190))
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -137,8 +138,8 @@ def upload():
     f = request.files['file']
     data = f.read()
     
-    if len(data) > 190:
-        return jsonify({'error': 'File too large - max 190 bytes'}), 400
+    if len(data) > MAX_FILE_SIZE:
+        return jsonify({'error': f'File too large - max {MAX_FILE_SIZE} bytes'}), 400
     
     conn = get_db()
     c = conn.cursor()
